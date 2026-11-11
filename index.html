@@ -77,11 +77,44 @@ function showTab(t){tab=t;document.getElementById('tab-training').classList.togg
 function render(){if(tab==='decks')renderDecks();else renderTraining()}
 function renderDecks(){
  const main=document.getElementById('main');
- main.innerHTML=`<div class="page-title">Мои колоды</div><div class="sub">Создавай наборы карточек и запоминай важное</div><div style="margin-bottom:17px"><button class="primary" onclick="openDeckForm()">＋ Создать колоду</button></div><div class="deck-list" id="deckList"></div>`;
+ main.innerHTML=`<div class="page-title">Мои колоды</div><div class="sub">Создавай наборы карточек и запоминай важное</div><div class="row" style="margin-bottom:12px"><button class="primary" onclick="openDeckForm()">＋ Создать колоду</button><button class="secondary" onclick="exportDecks()">Экспорт</button></div><div class="row" style="margin-bottom:17px"><button class="secondary" onclick="document.getElementById('importFile').click()">Импорт колод</button><input id="importFile" type="file" accept=".json,application/json" style="display:none" onchange="importDecks(event)"></div><div class="notice" style="margin:-5px 0 16px">Сохраняй резервную копию колод в файл и загружай её на другом устройстве.</div><div class="deck-list" id="deckList"></div>`;
  const list=document.getElementById('deckList');
  if(!data.decks.length){list.innerHTML='<div class="empty">Пока нет ни одной колоды.<br>Создай первую — это займёт минуту.</div>';return}
  list.innerHTML=data.decks.map(d=>`<div class="deck"><div class="deck-main" onclick="startDeck('${d.id}')" style="cursor:pointer"><div class="deck-name">${esc(d.name)}</div><div class="deck-meta">${d.cards.length} карточек</div></div><div class="deck-actions"><button class="icon-btn" title="Редактировать" onclick="openDeckForm('${d.id}')">✎</button><button class="icon-btn" title="Удалить" onclick="deleteDeck('${d.id}')">×</button></div></div>`).join('');
 }
+
+function exportDecks(){
+ if(!data.decks.length){alert('Пока нечего экспортировать — сначала создай колоду.');return}
+ const backup={app:'Memo Cards',formatVersion:1,exportedAt:new Date().toISOString(),lastDeckId:data.lastDeckId,decks:data.decks};
+ const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download='memo-cards-backup-'+new Date().toISOString().slice(0,10)+'.json';
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+ alert('Резервная копия подготовлена. Сохрани скачанный JSON-файл в надёжном месте.');
+}
+function importDecks(event){
+ const file=event.target.files?.[0];if(!file)return;
+ const reader=new FileReader();
+ reader.onload=()=>{
+  try{
+   const parsed=JSON.parse(reader.result);
+   const incoming=Array.isArray(parsed)?parsed:parsed.decks;
+   if(!Array.isArray(incoming)||!incoming.length)throw new Error('В файле не найден список колод.');
+   const valid=incoming.filter(d=>d&&typeof d.name==='string'&&Array.isArray(d.cards)&&d.cards.every(c=>c&&typeof c.front==='string'&&typeof c.answer==='string'));
+   if(valid.length!==incoming.length||!valid.length)throw new Error('Файл имеет неверный формат или содержит повреждённые колоды.');
+   if(!confirm(`Найдено колод: ${valid.length}. Добавить их к текущим колодам? Существующие колоды останутся без изменений.`))return;
+   const imported=valid.map(d=>({id:uid(),name:d.name,cards:d.cards.map(c=>({id:uid(),front:c.front,answer:c.answer,image:typeof c.image==='string'?c.image:''}))}));
+   data.decks.push(...imported);
+   if(!data.lastDeckId)data.lastDeckId=imported[0].id;
+   save();renderDecks();
+   alert(`Готово! Импортировано колод: ${imported.length}.`);
+  }catch(err){alert('Не удалось импортировать файл: '+(err.message||'проверь файл JSON.'))}
+  finally{event.target.value=''}
+ };
+ reader.onerror=()=>{alert('Не удалось прочитать файл.');event.target.value=''};
+ reader.readAsText(file);
+}
+
 function renderTraining(){
  const main=document.getElementById('main'),d=deckById(data.lastDeckId);
  if(!d){main.innerHTML=`<div class="page-title">Тренировка</div><div class="sub">Повторяй карточки, чтобы лучше запоминать</div><div class="empty">Сначала создай колоду во вкладке «Колоды».<div class="spacer"></div><button class="primary" onclick="showTab('decks')">Перейти к колодам</button></div>`;return}
